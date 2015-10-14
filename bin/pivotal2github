@@ -1,0 +1,193 @@
+#!/usr/bin/env ruby
+
+require 'rubygems'
+require 'tracker_api'
+require 'octokit'
+require 'logger'
+require 'redis'
+require 'net/http/persistent'
+require 'optparse'
+require 'ostruct'
+require 'pry'
+
+LOGGER = Logger.new(STDERR)
+LOGGER.level = Logger::INFO
+
+# PEOPLE = {}
+PAGE_SIZE = 20
+
+
+OPTIONS = OpenStruct.new
+parser = OptionParser.new do |o|
+  o.on('-p TOKEN', '--pivotal-token TOKEN', 'API token for Pivotal Tracker') do |v|
+    OPTIONS.pt_token = v
+  end
+
+  o.on('-g TOKEN', '--github-token TOKEN', 'API token for Github') do |v|
+    OPTIONS.gh_token = v
+  end
+
+  o.on('-r REPO', '--repository REPO', 'Target Github repository') do |v|
+    OPTIONS.repo = v
+  end
+
+  o.on('-P PROJECT_ID', '--project PROJECT_ID', 'Source Pivotal project ID') do |v|
+    OPTIONS.project_id = v
+  end
+
+  o.on("-h", "--help", "Prints this help") do
+   puts o
+   exit
+  end
+end
+parser.parse! ARGV
+
+
+STACK = Faraday::RackBuilder.new do |builder|
+  # builder.response  :logger
+  builder.use       Octokit::Response::RaiseError
+  builder.adapter   :net_http_persistent
+end
+
+
+module Helpers
+  def render_person(person)
+    return "None" if person.nil?
+    "[#{person.name}](#{person.email})"
+  end
+
+  def render_people(people)
+    return "None" if people.nil? || people.empty?
+    people.map { |p| render_person(p) }.join(', ')
+  end
+end
+
+
+class PersonCache
+  def self.get(project, id)
+    all(project)[id]
+  end
+  
+  private
+
+  def self.all(project)
+    @_all ||= Hash.new.tap do |h|
+      project.memberships.map(&:person).each do |p|
+        h[p.id] = p
+      end
+    end
+  end
+end
+
+
+class Story
+  def initialize(project, story)
+    @project = project
+    @story   = story
+  end
+  
+  def push(client, repo)
+    # return if old?
+    LOGGER.info "pushing story #{@story.id}"
+
+    issue = client.create_issue(repo, @story.name, body, labels: labels)
+
+    if closed?
+      LOGGER.info "closing issue for story #{@story.id}"
+      client.close_issue(repo, issue.number)
+    end
+
+    comments.each do |c|
+      LOGGER.info "pushing comment for story #{@story.id}"
+      c.push(client, repo, issue.number)
+    end
+  end
+
+  private
+  include Helpers
+
+  def comments
+    @story.comments.map { |c| Comment.new(@project ,c) }
+  end
+
+  def requester
+    PersonCache.get(@project, @story.requested_by_id)
+  end
+
+  def owners
+    @story.owner_ids.map { |id| PersonCache.get(@project, id) }
+  end
+  
+  def closed?
+    @story.current_state == 'accepted'
+  end
+
+  def labels
+    [ @story.labels.map(&:name),
+      "state:#{@story.current_state}",
+      "type:#{@story.story_type}",
+      @story.estimate && "estimate:#{@story.estimate.to_i}",
+    ].flatten.compact
+  end
+
+  def meta_s
+    [ "Original Story: [#{@story.id}](#{@story.url})",
+      "Requester: #{render_person requester}",
+      "Created on: #{@story.created_at.strftime '%F'}",
+      "Owners: #{render_people owners}",
+      @story.accepted_at && "Accepted on: #{@story.accepted_at.strftime '%F'}",
+    ].compact.map { |s| "- #{s}" }
+  end
+
+  def body
+    "#{@story.description}\n\n------\n\n#{meta_s.join "\n"}"
+  end
+end
+
+
+class Comment
+  def initialize(project, comment)
+    @project = project
+    @comment = comment
+  end
+
+  def push(client, repo, issue_number)
+    client.add_comment(repo, issue_number, body)
+  end
+
+  private
+  include Helpers
+
+  def body
+    "#{@comment.text}\n\n#{footer}"
+  end
+
+  def footer
+    [ '—',
+      @comment.person_id && render_person(PersonCache.get(@project, @comment.person_id)),
+      "on #{@comment.created_at.strftime '%F'}"
+    ].compact.join(' ')
+  end
+end
+
+
+def pt_client
+  Thread.current[:pt_client] ||= TrackerApi::Client.new(token: OPTIONS.pt_token, logger: LOGGER, adapter: :net_http_persistent)
+end
+
+
+def gh_client
+  Thread.current[:gh_client] ||= Octokit::Client.new(access_token: OPTIONS.gh_token, middleware: STACK)
+end
+
+
+project = pt_client.project(OPTIONS.project_id)
+
+offset = 0
+while true
+  stories = project.stories(limit: PAGE_SIZE, offset: offset, auto_paginate: false, filter: '-state:accepted')
+  break if stories.empty?
+  stories.map { |s| Story.new(project, s) }.each { |s| s.push(gh_client, OPTIONS.repo) }
+  offset += PAGE_SIZE
+end
+
