@@ -1,38 +1,33 @@
 # Pivotal2github
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/pivotal2github`. To experiment with that code, run `bin/console` for an interactive prompt.
-
-TODO: Delete this and the text above, and describe your gem
 
 ## Installation
 
-Add this line to your application's Gemfile:
-
-```ruby
-gem 'pivotal2github'
-```
-
-And then execute:
-
-    $ bundle
-
-Or install it yourself as:
+Install it yourself as:
 
     $ gem install pivotal2github
 
 ## Usage
 
-TODO: Write usage instructions here
+```
+Usage: pivotal2github [options]
+    -p, --pivotal-token TOKEN        API token for Pivotal Tracker
+    -g, --github-token TOKEN         API token for Github
+    -r, --repository REPO            Target Github repository
+    -P, --project PROJECT_ID         Source Pivotal project ID
+    -h, --help                       Prints this help
+```
 
-## Development
+- Only imports non-accepted stories.
+- Adds some metadata to the issues (particularly, link to original PT story).
+- Doesn't import assignments (but mentions them in the issue).
+- Any attachements in comments or stories themselves are not imported.
+- Imports state and estimates as tags, to be "translated" into e.g. Zenhub
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment. Run `bundle exec pivotal2github` to use the gem in this directory, ignoring other installed copies of this gem.
-
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and tags, and push the `.gem` file to [rubygems.org](https://rubygems.org).
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/[USERNAME]/pivotal2github.
+Bug reports and pull requests are welcome on GitHub at https://github.com/mezis/pivotal2github.
 
 
 ## License
