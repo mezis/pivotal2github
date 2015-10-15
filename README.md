@@ -18,12 +18,15 @@ Usage: pivotal2github [options]
     -h, --help                       Prints this help
 ```
 
+### Caveats
+
 - Only imports non-accepted stories.
 - Adds some metadata to the issues (particularly, link to original PT story).
 - Doesn't import assignments (but mentions them in the issue).
 - Any attachements in comments or stories themselves are not imported.
-- Imports state and estimates as tags, to be "translated" into e.g. Zenhub
-
+- Imports state and estimates as tags, to be "translated" into e.g. Zenhub.
+- Github Issues can't be deleted, so test this on a temporary repo first.
+- Remember you're limited to 5,000 Github API calls per hour. Count one per story and comment.
 
 ## Contributing
 
